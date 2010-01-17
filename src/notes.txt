@@ -1,0 +1,134 @@
+[marker management]
+every frame, detector returns a list of active markers.
+compare each against markers from last frame.
+comparison:
+	for each detectedMarker {
+		closestMarker = null;
+		for each activeMarker {
+			if (detectedMarker.codeId == activeMarker.codeId) {
+				if detectedMarker.position is closer than closestMarker.position
+				(or closestMarker == null) {
+					store activeMarker as closest marker.
+				}
+			}
+		}
+		if (closestMarker) {
+			if within threshold, it's the same marker, so update it.
+			add to updatedMarkers list (local, not member).
+			--MARKER_UPDATED--
+			continue;
+		}
+		
+		(else)
+		detectedMarker is new marker.
+		--MARKER_ADDED--
+	}
+	
+	for each (activeMarker) {
+		if activeMarker is not in updatedMarkers list, remove it.
+		--MARKER_REMOVED--
+	}
+
+member vars:
+	activeMarkers
+	position threshold
+	transformation threshold(s)
+
+
+
+
+posted here:
+http://www.mikkoh.com/blog/?p=182
+
+
+SOC: note also that i can test without a camera;
+load a bitmap image from file instead of from a camera stream.
+in mikko's example, dump the loaded image as a BitmapData into the 'capture' var.
+FLAR__MarkerDetector.detectMarkerLite accepts a FLARRgbRaster_BitmapData, which just wraps a BitmapData instance. 
+
+
+
+i haven't tried this yet, but looking through FLARMultiMarkerDetector, it looks like the way to use it is basically:
+
+create multiple .patt files, and embed them in your Main.as file.
+note that they must all be the same size! (we're using 16x16)
+
+instantiate a FLARMultiMarkerDetector (instead of a FLARSingleMarkerDetector).
+
+create an Array of N FLARTransMatResult instances (instead of just one).
+
+call FLARMultiMarkerDetector.detectMarkerLite(); this will return the amount of detected markers.  let's call this amount N.
+
+loop through that Array, and call FLARMultiMarkerDetector.getTransmationMatrix() for each FLARTransMatResult.
+
+call setTransformationMatrix on all of your FLARBaseNodes.
+
+the one thing i'm not yet sure about is how to tell which detected marker is which.  ah wait.  looks like each detected marker has a property called 'codeId', and you can find the codeId of each of FLARMultiMarkerDetector's results with FLARMultiMarkerDetector.getARCodeIndex().  however, it's referencing a variable that doesn't exist.  in FLARMultiMarkerDetector, change this line:
+return this._result_holder.result_array[i_index].arcode_id;
+
+to this:
+return this._result_holder.result_array[i_index].codeId;
+
+also, note that FLARMultiMarkerDetector has a bunch of trace statements in it that will likely slow down the application; it's best to comment these out.
+
+
+phew.  sorry about the brain dump.  here's a code example.  it's *very* untested and incomplete, and only shows changes from mikko's code.
+
+
+[Embed(source="../lib/mikko01.pat", mimeType="application/octet-stream")]
+private var MarkerPattern01:Class;
+
+[Embed(source="../lib/mikko02.pat", mimeType="application/octet-stream")]
+private var MarkerPattern02:Class;
+
+[Embed(source="../lib/mikko03.pat", mimeType="application/octet-stream")]
+private var MarkerPattern03:Class;
+
+
+public function Main () :void {
+	// init patterns and multi-marker detector
+	var patternClasses:Array = {MarkerPattern01, MarkerPattern02, MarkerPattern03};
+	markerPatterns = new Array(patternClasses);
+	for (var i:int=0; i<patternClasses.length; i++) {
+		markerPatterns[i] = new FlarCode(16, 16);
+		markerPattern[i].loadARPatt(new (patternClasses[i] as Class)());
+	}
+	detector = new FLARMultiMarkerDetector(cameraParameters, markerPatterns, 80, markerPatterns.length);
+	
+	// init transformation matrices, used to report the results of marker(s) detection
+	transMats = new Array(markerPatterns.length);
+	for (var i:int=0; i<markerPatterns.length; i++) {
+		transMats[i] = new FLARTransMatResult();
+	}
+	
+	// init base nodes
+	baseNodes = new Array(markerPatterns.length);
+	for (var i:int=0; i<markerPatterns.length; i++) {
+		baseNodes[i] = new FLARBaseNode();
+	}
+}	
+
+private function mainEnter (e:Event) :void {
+	capture.draw(vid);
+	
+	var numDetectedMarkers:int = detector.detectMarkerLite(raster, 100);
+	var markerId:int;
+	for (var i:int=0; i<numDetectedMarkers; i++) {
+		// ignore detected markers with low confidence
+		if (detector.getConfidence(i) < 0.5) { return; }
+		
+		// figure out which marker we're looking at
+		markerId = detector.getARCodeIndex(i);
+		
+		// set the transformation matrix accordingly
+		detector.getTransmationMatrix(i, transMats[markerId]);
+	}
+	
+	// apply transformation matrices to base nodes
+	for (i=0; i<baseNodes.length; i++) { 
+		baseNodes[i].setTransformMatrix(transMats[i]);
+	}
+	
+	//Render the papervision scene
+	renderer.render();
+}

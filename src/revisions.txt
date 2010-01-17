@@ -1,0 +1,12 @@
+[v0.4 - released]
+added FLARMarker.sessionId
+added FLARMarkerOutline.rotationX/Y/Z and .vector3D.
+
+
+[v0.3 - released 2009.03.28]
+
+
+[v0.2 - released 2009.03.27]
+
+
+[v0.1 - released 2009.03.09]
